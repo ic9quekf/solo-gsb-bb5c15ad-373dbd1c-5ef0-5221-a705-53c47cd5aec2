@@ -319,3 +319,32 @@ body {
 .sens-bar-fill { height: 100%; border-radius: 3px; }
 .sens-bar-pos { background: var(--brand); }
 .sens-bar-neg { background: var(--neg); }
+
+/* ---------------- SPICE 网表互换 ---------------- */
+.netlist-text {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font: 12.5px/1.55 "SFMono-Regular", Consolas, "Courier New", monospace;
+  background: #fbfcfe;
+  resize: vertical;
+  min-height: 120px;
+  white-space: pre;
+  overflow-x: auto;
+}
+.netlist-text:focus { outline: none; border-color: var(--brand); background: #fff; }
+.netlist-actions { display: flex; gap: 10px; margin-top: 9px; flex-wrap: wrap; }
+.netlist-actions .btn { flex: 1 1 auto; }
+.netlist-ok {
+  border-radius: 10px;
+  padding: 10px 14px;
+  border: 1px solid #bfe3cd;
+  background: var(--ok-bg);
+  color: var(--ok);
+  font-weight: 600;
+  font-size: 13px;
+}
+.netlist-ok ul { margin: 4px 0 0; padding-left: 20px; font-weight: 400; color: var(--ink); }
+.netlist-ok li { margin: 2px 0; }
+.error-panel .err-line { font-family: "SFMono-Regular", Consolas, monospace; font-weight: 700; }

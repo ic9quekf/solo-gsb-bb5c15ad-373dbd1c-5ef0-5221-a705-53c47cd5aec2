@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .netlist import export_netlist, parse_netlist
 from .sensitivity import (
     SENSITIVITY_MAX_RATIO,
     SENSITIVITY_MIN_RATIO,
@@ -22,7 +23,7 @@ from .thevenin import thevenin_equivalent
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="直流网络校核器", version="1.3.0")
+app = FastAPI(title="直流网络校核器", version="1.4.0")
 
 
 async def _read_json_object(request: Request) -> tuple[dict[str, Any] | None, JSONResponse | None]:
@@ -108,6 +109,51 @@ async def api_sensitivity(request: Request) -> JSONResponse:
         # 单个元件扰动失败不报错，内联在 200 响应的 elements[].errors 中
         return JSONResponse(status_code=422, content=exc.to_dict())
     return JSONResponse(status_code=200, content=result)
+
+
+@app.post("/api/netlist/import")
+async def api_netlist_import(request: Request) -> JSONResponse:
+    payload, bad = await _read_json_object(request)
+    if bad is not None:
+        return bad
+
+    text = payload.get("text")
+    if not isinstance(text, str):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "ok": False,
+                "errors": [
+                    {
+                        "code": "bad_payload",
+                        "message": "缺少字符串字段 text（SPICE 网表文本）",
+                        "items": [],
+                    }
+                ],
+            },
+        )
+
+    try:
+        result = parse_netlist(text)
+    except CircuitError as exc:
+        # 422：逐行错误（netlist_import），任一行非法都不改写调用方电路
+        return JSONResponse(status_code=422, content=exc.to_dict())
+    return JSONResponse(status_code=200, content={"ok": True, **result})
+
+
+@app.post("/api/netlist/export")
+async def api_netlist_export(request: Request) -> JSONResponse:
+    payload, bad = await _read_json_object(request)
+    if bad is not None:
+        return bad
+
+    try:
+        result = export_netlist(payload)
+    except CircuitError as exc:
+        # 422：网络本身未通过校验（validation/no_ground/...），
+        # 或接地改名为 0 与已有节点 0 冲突（ground_conflict）
+        return JSONResponse(status_code=422, content=exc.to_dict())
+    return JSONResponse(status_code=200, content={"ok": True, **result})
 
 
 @app.get("/api/meta")

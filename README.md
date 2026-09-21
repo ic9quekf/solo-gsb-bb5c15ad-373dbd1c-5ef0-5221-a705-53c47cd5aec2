@@ -18,6 +18,20 @@
   - **理想电压源互相矛盾**：如不同电压的理想电压源并联，列出冲突元件。
 - 前端提供三个示例一键载入（正常网络 / 浮置子网 / 电压源冲突）、表格化编辑、
   提交前输入校验、结果与问题行高亮。
+- **SPICE 网表互换**：页面提供网表文本区，可把 SPICE 风格网表**导入**为当前
+  表格电路，也可把当前表格**导出**为规范网表。
+  - 导入支持**空行**、`*` 开头的**整行注释**、`;` 起到行尾的**行尾注释**；
+    元件行固定为 **`名称 正端 负端 数值`** 四个字段，名称首字母（大小写不敏感）
+    决定元件类型，仅支持 `R / I / V`。
+  - 数值接受**科学计数法**（`1e3`、`-2.5e-2`）与工程倍率后缀
+    `p=1e-12 / n=1e-9 / u=1e-6 / m=1e-3 / k=1e3 / meg=1e6 / g=1e9`；
+    **`m` 一律按 1e-3（毫）解析**，兆必须写作 `meg`（`M`/`m` 都不是兆）。
+  - 导入**逐行收集**重复编号、字段数量、类型、数值、非法自环等错误并**标明行号**，
+    **任一错误都不会改写当前电路**；成功后节点表由元件端点自动推导（按首次出现
+    顺序，节点 `0` 排在最前），并要求端点中存在**节点 0 作为接地**。
+  - 导出**按元件表顺序**生成规范网表；当前接地不是 `0` 时自动把接地节点改名为
+    `0`，若节点表中**另有名为 `0` 的节点**则拒绝导出并说明冲突。导出文本再次
+    导入可还原**等价**电路（同名节点、同序元件、等值参数）。
 - **单参数扫描**：从元件表选择一个元件，给出起值、止值与采样点数（2～101），
   后端在网络副本上逐点等间距替换该元件参数，复用同一套 MNA 求解与结构诊断。
   - 扫描**不会改写当前电路表**；单个采样点求解失败时保留该点的错误原因，
@@ -107,6 +121,23 @@ API：
   失败，同样返回 `422`，错误分组沿用 `/api/solve` 的
   `no_ground / floating_subnet / voltage_conflict / singular / validation` 编码，
   并额外带 `stage` 字段标明失败阶段；成功返回 `200`。
+- `POST /api/netlist/import`：SPICE 网表导入。请求体 `{"text": "<网表文本>"}`，
+  解析成功返回 `200`：
+  `{"ok": true, "ground": "0", "nodes": [...], "elements": [...], "line_count": N}`，
+  其中 `nodes` 由元件端点推导（0 排最前，其余按首次出现），`elements` 与
+  `/api/solve` 的元件段同构（数值已解析为浮点）。任一行非法或缺少接地节点 0
+  时返回 `422`，错误码为 `netlist_import`，`items[]` 每条带 `line`（行号，
+  全局问题为 `null`）、`ref`（如“第 3 行（R1）”）与 `detail`，覆盖重复编号 /
+  字段数量 / 类型 / 数值 / 非法自环 / 容量超限；**是否替换电路完全由调用方决定，
+  后端无状态**。请求体不是 JSON 对象 / 缺少字符串字段 `text` 时返回 `400`。
+- `POST /api/netlist/export`：导出规范 SPICE 网表。请求体与 `/api/solve` 的网络
+  JSON 完全一致（`ground` / `nodes` / `elements`），复用同一套输入与接地校验；
+  成功返回 `200`：`{"ok": true, "netlist": "<文本>", "ground": "0",
+  "renamed_from": "gnd" | null}`。当前接地不是 `0` 时把接地节点改名为 `0`
+  （`renamed_from` 给出原名）；若节点表中已另有名为 `0` 的非接地节点，返回
+  `422` 且错误码为 `ground_conflict` 并说明冲突；网络本身未通过校验时返回
+  `422`，错误分组沿用 `validation / no_ground / ground_not_found`。
+  导出文本再次调用 `/api/netlist/import` 可还原等价电路。
 - `POST /api/sensitivity`：元件敏感度分析。请求体与 `/api/solve` 相同，另加一个
   `sensitivity` 段（见下）。**敏感度参数本身非法**（缺少 `sensitivity` 段、
   目标类型不是 `voltage` / `current`、目标节点 / 支路不存在、相对扰动比例不在
@@ -445,6 +476,90 @@ curl -s -X POST http://localhost:8000/api/sensitivity \
 | 元件正 / 负扰动后网络无唯一解 | 该元件 `status:"error"`，错误分组带 `side:"plus"` / `"minus"`，其它继续 |
 | 目标基准值 F₀ = 0 | 元件照常成功，`sensitivity:null`、不排名，仅返回导数 |
 
+## SPICE 网表互换
+
+### 页面操作
+
+1. 在左侧「SPICE 网表互换」卡片的文本区粘贴 / 编写网表，点击 **📥 导入网表**；
+2. 解析成功后节点表与元件表被整体替换：节点由端点自动推导，节点 **0** 固定为接地，
+   旧的求解 / 扫描 / 端口等效 / 敏感度结果自动清空，需重新校核求解；
+3. 解析失败时反馈面板**逐行列出错误并标明行号**，当前表格电路**保持不变**，
+   修正文本后可再次导入；
+4. 点击 **📤 导出当前电路**，按元件表顺序生成规范网表并回填到文本区：
+   接地不是 0 时自动改名（反馈区提示原名），存在改名冲突时拒绝导出并说明原因。
+
+### 语法
+
+```
+* 整行注释（必须以 * 开头）
+名称 正端 负端 数值   ; ; 之后为行尾注释
+
+V1 1 0 10k           ; 10000 V，k = 1e3
+R1 1 2 1.5k          ; 1500 Ω
+R2 2 0 2m            ; 0.002 Ω，m = 1e-3（毫，不是兆！）
+R3 2 n3 3.3p         ; 3.3e-12 Ω
+I1 n3 0 0.2meg       ; 200000 A，meg = 1e6
+```
+
+- 空行（含只含空白的行）被忽略；`;` 可独占一行充当注释。
+- 元件行必须恰好 4 个空白分隔字段；元件名称区分大小写（`R1` 与 `r1` 是两个
+  不同编号），节点名同样区分大小写，首字母仅用于判定 `R / I / V` 类型。
+- 数值倍率后缀（大小写不敏感）：
+
+  | 后缀 | p | n | u | m | k | meg | g |
+  | ---- | -- | -- | -- | -- | -- | -- | -- |
+  | 倍率 | 1e-12 | 1e-9 | 1e-6 | **1e-3** | 1e3 | 1e6 | 1e9 |
+
+  不带后缀时按科学计数法 / 普通浮点解析；电阻值必须大于 0。
+- 网表中没有独立节点表：**节点由所有元件端点推导**（首次出现顺序，0 置首），
+  因此端点中必须出现接地节点 **0**，否则整单拒绝。
+
+### 请求示例
+
+```bash
+# 导入
+curl -s -X POST http://localhost:8000/api/netlist/import \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "* demo\nV1 1 0 10k\nR1 1 2 1k\nR2 2 0 2k\n"}'
+
+# 导出（接地 gnd 会被改名为 0）
+curl -s -X POST http://localhost:8000/api/netlist/export \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "ground": "gnd",
+    "nodes": ["gnd", "1"],
+    "elements": [
+      {"id": "V1", "type": "V", "node_p": "1", "node_n": "gnd", "value": 5},
+      {"id": "R1", "type": "R", "node_p": "1", "node_n": "gnd", "value": 10}
+    ]
+  }'
+```
+
+导入失败示例（`422`，逐条带行号；前端不会用它替换当前电路）：
+
+```json
+{"ok": false,
+ "errors": [{"code": "netlist_import",
+             "message": "SPICE 网表导入失败",
+             "items": [
+               {"line": 3, "ref": "第 3 行（R1）",
+                "detail": "正端与负端同为“1”，元件不能构成自环"},
+               {"line": 4, "ref": "第 4 行（R2）",
+                "detail": "数值“abc”无法识别（支持科学计数法与 p/n/u/m/k/meg/g 后缀）"},
+               {"line": null, "ref": "0",
+                "detail": "端点中未出现接地节点 0：SPICE 网表必须以节点 0 作为接地"}]}]}
+```
+
+导出冲突示例（`422`）：
+
+```json
+{"ok": false,
+ "errors": [{"code": "ground_conflict",
+             "message": "无法导出 SPICE 网表：接地节点改名冲突",
+             "items": [{"ref": "0",
+                        "detail": "当前接地节点为“gnd”，导出时需改名为 0，但节点表中已存在名为 0 的非接地节点；请先把节点 0 改名或改选接地，再导出"}]}]}
+```
+
 ## 本地开发（不使用 Docker）
 
 ```bash
@@ -458,16 +573,18 @@ uvicorn app.main:app --reload --port 8000
 ```
 .
 ├── app/
-│   ├── main.py            # FastAPI 路由（solve / sweep / thevenin / sensitivity）与静态文件
-│   ├── solver.py          # MNA 组装、结构诊断与求解
+│   ├── main.py            # FastAPI 路由（solve / sweep / thevenin / sensitivity / netlist.*）与静态文件
+│   ├── solver.py          # MNA 组装、结构诊断与求解（parse_network 输入校验供网表模块复用）
+│   ├── netlist.py         # SPICE 网表导入解析 / 规范导出（接地 0 改名与冲突检测）
 │   ├── sweep.py           # 单参数扫描：校验 + 逐点复用 solve
 │   ├── thevenin.py        # 两节点端口戴维南等效：开路电压 + 置零注入测试电流
 │   ├── sensitivity.py     # 元件敏感度：逐元件 ±h 扰动 + 中心差分归一化灵敏度
 │   └── static/
-│       ├── index.html     # 页面结构（含扫描、敏感度、端口等效表单与结果区）
-│       ├── style.css      # 样式与高亮（含扫描曲线、敏感度条形、端口等效样式）
-│       └── app.js         # 表格编辑、校验、单次求解、扫描、敏感度与端口等效交互
+│       ├── index.html     # 页面结构（含网表互换、扫描、敏感度、端口等效表单与结果区）
+│       ├── style.css      # 样式与高亮（含网表、扫描曲线、敏感度条形、端口等效样式）
+│       └── app.js         # 表格编辑、校验、单次求解、网表互换、扫描、敏感度与端口等效交互
 ├── test_solver.py         # 求解器冒烟测试：python3 test_solver.py
+├── test_netlist.py        # SPICE 网表互换冒烟测试：python3 test_netlist.py
 ├── test_sweep.py          # 扫描冒烟测试：python3 test_sweep.py
 ├── test_thevenin.py       # 端口等效冒烟测试：python3 test_thevenin.py
 ├── test_sensitivity.py    # 敏感度冒烟测试：python3 test_sensitivity.py

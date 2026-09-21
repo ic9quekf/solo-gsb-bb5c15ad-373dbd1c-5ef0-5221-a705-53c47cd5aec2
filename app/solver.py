@@ -42,10 +42,13 @@ def _group(code: str, message: str, items: list[dict[str, Any]] | None = None):
     return CircuitError([{"code": code, "message": message, "items": items or []}])
 
 
-def solve(payload: dict[str, Any]) -> dict[str, Any]:
-    """校核并求解一个直流网络。
+def parse_network(payload: dict[str, Any]) -> tuple[list[str], list[dict[str, Any]], str]:
+    """校验网络输入（节点表 / 元件表 / 接地归属），返回 (nodes, elements, ground)。
 
-    成功返回结果字典；输入非法或网络结构矛盾时抛出 :class:`CircuitError`。
+    输入格式问题统一抛出 ``code == "validation"`` 的 :class:`CircuitError`；
+    未指定接地 / 接地不在节点表时抛出 ``no_ground`` / ``ground_not_found``。
+    该函数只做“输入是否合法、接地是否在表中”的检查，不做浮置子网 /
+    电压源冲突等结构诊断，供 :func:`solve` 与网表导出等复用。
     """
     problems: list[dict[str, Any]] = []
 
@@ -166,6 +169,15 @@ def solve(payload: dict[str, Any]) -> dict[str, Any]:
             [{"ref": ground, "detail": "请在节点表中将其指定为接地，或改选已有节点"}],
         )
 
+    return nodes, elements, ground
+
+
+def solve(payload: dict[str, Any]) -> dict[str, Any]:
+    """校核并求解一个直流网络。
+
+    成功返回结果字典；输入非法或网络结构矛盾时抛出 :class:`CircuitError`。
+    """
+    nodes, elements, ground = parse_network(payload)
     # --------------------------- 结构诊断：浮置子网（R / V 构成导电连通图）----
     parent = {name: name for name in nodes}
 

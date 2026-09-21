@@ -10,7 +10,7 @@
   <header class="topbar">
     <div class="topbar-inner">
       <h1>直流网络校核器</h1>
-      <p class="subtitle">改进节点分析（MNA）· 节点电压 / 支路电流 / 功率平衡校核 · 参数扫描 · 元件敏感度分析 · 端口戴维南等效</p>
+      <p class="subtitle">改进节点分析（MNA）· 节点电压 / 支路电流 / 功率平衡校核 · SPICE 网表互换 · 参数扫描 · 元件敏感度分析 · 端口戴维南等效</p>
     </div>
   </header>
 
@@ -77,6 +77,25 @@
           <b>R</b> 电阻（Ω）　<b>I</b> 电流源（A，正值电流由 p 流向 n）
           <b>V</b> 电压源（V，p 为正极、n 为负极）；支路方向均取 p → n。
         </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>SPICE 网表互换</h2>
+        </div>
+        <textarea id="netlist-text" class="netlist-text" rows="8" spellcheck="false"
+          placeholder="* 每行：名称 正端 负端 数值；节点 0 为接地&#10;* 空行、* 整行注释、; 行尾注释均允许&#10;V1 1 0 10k&#10;R1 1 2 1.5k&#10;R2 2 0 20k"></textarea>
+        <div class="netlist-actions">
+          <button class="btn" id="btn-netlist-import">📥 导入网表（替换当前电路）</button>
+          <button class="btn" id="btn-netlist-export">📤 导出当前电路</button>
+        </div>
+        <p class="hint">
+          元件行格式 <b>名称 正端 负端 数值</b>，名称首字母须为 R / I / V；
+          数值支持科学计数法与 <b>p / n / u / m / k / meg / g</b> 后缀（<b>m = 1e-3 毫</b>，兆用 meg）。
+          导入逐行校验并标明行号，<b>任一错误都不会改动当前表格</b>；节点由端点自动推导且必须含接地节点 0。
+          导出按表格顺序生成；接地不是 0 时自动改名为 0（已存在另一个节点 0 则拒绝）。
+        </p>
+        <div id="netlist-feedback" class="error-panel hidden"></div>
       </div>
 
       <div class="card">

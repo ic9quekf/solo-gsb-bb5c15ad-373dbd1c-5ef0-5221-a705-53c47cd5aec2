@@ -1527,4 +1527,118 @@ function renderSweepTable() {
   });
 }
 
+/* ------------------------------ SPICE 网表互换 ------------------------------ */
+function clearNetlistFeedback() {
+  const fb = $("#netlist-feedback");
+  fb.classList.add("hidden");
+  fb.innerHTML = "";
+}
+
+function showNetlistErrors(errors) {
+  const fb = $("#netlist-feedback");
+  fb.className = "error-panel";
+  fb.innerHTML = "";
+  (errors || []).forEach((g) => {
+    const group = el("div", { class: "err-group" });
+    group.appendChild(el("div", { class: "err-title", text: `● ${g.message}` }));
+    if (g.items && g.items.length) {
+      const ul = el("ul");
+      g.items.forEach((item) => {
+        const li = el("li");
+        if (item.line != null) {
+          li.appendChild(el("span", { class: "err-line", text: `第 ${item.line} 行：` }));
+        } else if (item.ref) {
+          li.appendChild(el("span", { class: "err-ref", text: item.ref + "：" }));
+        }
+        li.appendChild(document.createTextNode(item.detail || JSON.stringify(item)));
+        ul.appendChild(li);
+      });
+      group.appendChild(ul);
+    }
+    fb.appendChild(group);
+  });
+}
+
+function showNetlistOk(message, details) {
+  const fb = $("#netlist-feedback");
+  fb.className = "netlist-ok";
+  fb.innerHTML = "";
+  fb.appendChild(document.createTextNode("✔ " + message));
+  if (details && details.length) {
+    const ul = el("ul");
+    details.forEach((d) => ul.appendChild(el("li", { text: d })));
+    fb.appendChild(ul);
+  }
+}
+
+async function postNetlist(path, body) {
+  let resp;
+  try {
+    resp = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    showNetlistErrors([{ code: "network", message: `网络请求失败：${err}`, items: [] }]);
+    return null;
+  }
+  let data;
+  try {
+    data = await resp.json();
+  } catch (err) {
+    showNetlistErrors([{ code: "server", message: "服务端返回了无法解析的内容", items: [] }]);
+    return null;
+  }
+  if (!resp.ok || !data.ok) {
+    showNetlistErrors(
+      data.errors || [{ code: "server", message: "网表处理失败", items: [] }]
+    );
+    return null;
+  }
+  return data;
+}
+
+$("#btn-netlist-import").addEventListener("click", async () => {
+  clearNetlistFeedback();
+  const text = $("#netlist-text").value;
+  const data = await postNetlist("/api/netlist/import", { text });
+  if (!data) return; // 任一错误：state 未触碰，当前电路保持不变
+
+  // 成功后整体替换当前电路（数值在后端已解析为浮点，表格按字符串显示）
+  state = {
+    ground: data.ground,
+    nodes: data.nodes.map((id) => ({ id })),
+    elements: data.elements.map((e) => ({ ...e, value: String(e.value) })),
+  };
+  resetSweep();
+  resetThevenin();
+  resetSensitivity();
+  $("#result-area").classList.add("hidden");
+  $("#placeholder").classList.add("hidden");
+  portSel = {
+    p: data.nodes.length > 1 ? data.nodes[1] : "",
+    n: data.ground,
+  };
+  nodeSig = ""; // 强制下一次渲染判定“节点表变更”，失效旧的派生结果
+  renderAll();
+  showNetlistOk(
+    `网表导入成功：${data.elements.length} 个元件，推导出 ${data.nodes.length} 个节点，接地节点为 ${data.ground}。`,
+    ["节点由元件端点按首次出现顺序推导，旧的求解 / 扫描 / 等效结果已清空，可重新校核求解。"]
+  );
+});
+
+$("#btn-netlist-export").addEventListener("click", async () => {
+  clearNetlistFeedback();
+  const data = await postNetlist("/api/netlist/export", buildPayload());
+  if (!data) return;
+  $("#netlist-text").value = data.netlist;
+  const details = [];
+  if (data.renamed_from) {
+    details.push(`接地节点“${data.renamed_from}”已映射为规范接地节点 0（其余节点名不变）。`);
+  }
+  details.push("导出文本可直接再次导入，得到等价电路（同名节点、同序元件、等值参数）。");
+  showNetlistOk("已按元件表顺序生成规范 SPICE 网表。", details);
+});
+
 renderAll();

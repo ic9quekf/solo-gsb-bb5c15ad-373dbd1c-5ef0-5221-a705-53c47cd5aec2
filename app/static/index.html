@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>直流网络校核器</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1>直流网络校核器</h1>
+      <p class="subtitle">改进节点分析（MNA）· 节点电压 / 支路电流 / 功率平衡校核 · 参数扫描 · 元件敏感度分析 · 端口戴维南等效</p>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ===================== 左侧：输入区 ===================== -->
+    <section class="panel panel-input">
+      <div class="toolbar">
+        <div class="btn-group">
+          <button class="btn" data-sample="1">载入示例①正常网络</button>
+          <button class="btn" data-sample="2">示例②浮置子网</button>
+          <button class="btn" data-sample="3">示例③电压源冲突</button>
+        </div>
+        <button class="btn btn-ghost" id="btn-clear">清空</button>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>接地节点</h2>
+        </div>
+        <select id="ground-select" class="input ground-select"></select>
+        <p class="hint">接地节点电位固定为 0&nbsp;V，是全网络的电压参考点。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>节点表</h2>
+          <div class="head-right">
+            <span class="count" id="node-count"></span>
+            <button class="btn btn-small" id="btn-add-node">＋ 添加节点</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="grid" id="node-table">
+            <thead><tr><th style="width:70px">编号</th><th>节点</th><th style="width:60px">操作</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>元件表</h2>
+          <div class="head-right">
+            <span class="count" id="element-count"></span>
+            <button class="btn btn-small" id="btn-add-element">＋ 添加元件</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="grid" id="element-table">
+            <thead>
+              <tr>
+                <th style="width:70px">编号</th>
+                <th style="width:88px">类型</th>
+                <th style="width:80px">起始端 p</th>
+                <th style="width:80px">终止端 n</th>
+                <th style="width:120px">参数值</th>
+                <th style="width:56px">操作</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="hint">
+          <b>R</b> 电阻（Ω）　<b>I</b> 电流源（A，正值电流由 p 流向 n）
+          <b>V</b> 电压源（V，p 为正极、n 为负极）；支路方向均取 p → n。
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>单参数扫描</h2>
+        </div>
+        <div class="sweep-form">
+          <label class="sweep-field sweep-field-wide">
+            <span>扫描元件</span>
+            <select id="sweep-element" class="input"></select>
+          </label>
+          <label class="sweep-field">
+            <span>起值</span>
+            <input id="sweep-start" class="input" type="number" step="any" value="1" />
+          </label>
+          <label class="sweep-field">
+            <span>止值</span>
+            <input id="sweep-end" class="input" type="number" step="any" value="100" />
+          </label>
+          <label class="sweep-field">
+            <span>采样点数 (2～101)</span>
+            <input id="sweep-points" class="input" type="number" step="1" min="2" max="101" value="21" />
+          </label>
+        </div>
+        <p class="hint">
+          逐点等间距替换所选元件的参数并复用同一套求解 / 诊断；扫描在副本上进行，不会改写元件表。
+          电阻的起、止值都必须为正，单个采样点失败不会中断整次扫描。
+        </p>
+        <button class="btn btn-block" id="btn-sweep">📈 开始参数扫描</button>
+        <div id="sweep-feedback" class="error-panel hidden"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>两节点端口等效（戴维南）</h2>
+        </div>
+        <div class="port-form">
+          <label class="sweep-field">
+            <span>端口正端 p</span>
+            <select id="port-p" class="input"></select>
+          </label>
+          <span class="port-arrow" title="端口方向 p → n">→</span>
+          <label class="sweep-field">
+            <span>端口负端 n</span>
+            <select id="port-n" class="input"></select>
+          </label>
+        </div>
+        <p class="hint">
+          对所选端口求戴维南等效：先求原网络的开路电压 V_oc（V_p − V_n），
+          再将独立电压源短路、独立电流源开路，从 p 端注入 1&nbsp;A 测试电流（由 n 端流出）求得等效电阻 R_eq。
+          端口开路本身无需改动电路；节点表变更后旧结果自动失效。
+        </p>
+        <button class="btn btn-block" id="btn-thevenin">🔌 计算端口等效</button>
+        <div id="thevenin-feedback" class="error-panel hidden"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>元件敏感度分析</h2>
+        </div>
+        <div class="sweep-form">
+          <label class="sweep-field">
+            <span>目标类型</span>
+            <select id="sens-quantity" class="input" disabled>
+              <option value="voltage">节点电压 (V)</option>
+              <option value="current">支路电流 (A)</option>
+            </select>
+          </label>
+          <label class="sweep-field">
+            <span id="sens-target-label">目标节点</span>
+            <select id="sens-target" class="input" disabled></select>
+          </label>
+          <label class="sweep-field sweep-field-wide">
+            <span>相对扰动比例（0.01%～10%，正/负同幅）</span>
+            <input id="sens-ratio" class="input" type="number" step="any" min="0.01" max="10" value="0.1" disabled />
+          </label>
+        </div>
+        <p class="hint">
+          对每个 R / I / V 元件在网络副本上分别施加 ±h 的相对参数扰动并复用 MNA 求解，
+          以中心差分计算目标对元件参数的<b>归一化灵敏度</b>（参数每相对变化 1% 时目标近似相对变化百分之几）。
+          结果按 |灵敏度| 排序；基准网络必须先校核求解成功，单个元件扰动失败不影响其它元件。
+        </p>
+        <button class="btn btn-block" id="btn-sensitivity" disabled>🎯 计算元件敏感度</button>
+        <div id="sensitivity-feedback" class="error-panel hidden"></div>
+      </div>
+
+      <button class="btn btn-primary btn-block" id="btn-solve">▶ 校核求解</button>
+    </section>
+
+    <!-- ===================== 右侧：结果区 ===================== -->
+    <section class="panel panel-result">
+      <div id="error-panel" class="error-panel hidden"></div>
+      <div id="warning-panel" class="warning-panel hidden"></div>
+
+      <div id="sweep-result" class="hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>参数扫描曲线</h2>
+            <span class="count" id="sweep-meta"></span>
+          </div>
+          <div class="sweep-controls">
+            <label class="sweep-ctrl">
+              <span>观测量</span>
+              <select id="sweep-quantity">
+                <option value="voltage">节点电压 (V)</option>
+                <option value="current">支路电流 (A)</option>
+              </select>
+            </label>
+            <label class="sweep-ctrl">
+              <span id="sweep-target-label">节点</span>
+              <select id="sweep-target"></select>
+            </label>
+            <span class="legend">
+              <i class="sw sw-ok"></i>成功
+              <i class="sw sw-err"></i>失败点（不连线）
+            </span>
+          </div>
+          <div id="sweep-chart"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>采样点明细</h2>
+            <span class="legend"><i class="sw sw-err"></i>该点求解失败</span>
+          </div>
+          <div class="table-wrap">
+            <table class="grid result-grid" id="sweep-table">
+              <thead>
+                <tr>
+                  <th style="width:52px">#</th>
+                  <th id="sweep-param-head">参数值</th>
+                  <th id="sweep-value-head">观测值</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="thevenin-result" class="hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>两节点端口等效（戴维南）</h2>
+            <span class="legend">等效方向：端口 p → n</span>
+          </div>
+          <div id="thevenin-card" class="thevenin-card"></div>
+        </div>
+      </div>
+
+      <div id="sensitivity-result" class="hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>元件敏感度分析（中心差分）</h2>
+            <span class="count" id="sensitivity-meta"></span>
+          </div>
+          <div id="sensitivity-summary" class="sens-summary"></div>
+          <div class="table-wrap">
+            <table class="grid result-grid" id="sensitivity-table">
+              <thead>
+                <tr>
+                  <th style="width:48px">排名</th>
+                  <th>元件</th>
+                  <th>类型</th>
+                  <th>基准参数</th>
+                  <th>负扰动目标</th>
+                  <th>正扰动目标</th>
+                  <th>导数 dF/dp</th>
+                  <th style="width:210px">归一化灵敏度 S</th>
+                  <th>状态 / 失败原因</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="hint">
+            S = (p/F₀)·dF/dp：元件参数每相对变化 1% 时目标值近似相对变化的百分数（负号表示反向变化）；
+            dF/dp 为中心差分得到的有量纲导数。目标基准值为 0 时 S 不可归一化，仅显示导数。
+            节点表变更后旧结果自动清空。
+          </p>
+        </div>
+      </div>
+
+      <div id="result-area" class="hidden">
+        <div class="card">
+          <div class="card-head"><h2>功率平衡校核</h2></div>
+          <div id="power-card" class="power-card"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>节点电压</h2>
+            <span class="legend"><i class="sw sw-ground"></i>接地　<i class="sw sw-neg"></i>负电位</span>
+          </div>
+          <div class="table-wrap">
+            <table class="grid result-grid" id="voltage-table">
+              <thead><tr><th>节点</th><th>电压 (V)</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>支路电流与功率</h2>
+            <span class="legend"><i class="sw sw-src"></i>电源支路　<i class="sw sw-neg"></i>实际方向 n→p</span>
+          </div>
+          <div class="table-wrap">
+            <table class="grid result-grid" id="branch-table">
+              <thead>
+                <tr>
+                  <th>编号</th><th>类型</th><th>支路</th><th>参数</th>
+                  <th>电流 (A)</th><th>实际方向</th><th>功率 (W)</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="placeholder" class="placeholder">
+        <div class="placeholder-mark">⚡</div>
+        <p>录入网络后点击“校核求解”，或先载入一个示例。</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

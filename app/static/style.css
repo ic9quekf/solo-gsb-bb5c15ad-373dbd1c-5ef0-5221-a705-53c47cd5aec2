@@ -319,3 +319,30 @@ body {
 .sens-bar-fill { height: 100%; border-radius: 3px; }
 .sens-bar-pos { background: var(--brand); }
 .sens-bar-neg { background: var(--neg); }
+
+/* ---------------- SPICE 网表互换 ---------------- */
+.spice-text {
+  width: 100%;
+  font-family: "SFMono-Regular", Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: vertical;
+  min-height: 120px;
+}
+.spice-text:focus { outline: none; border-color: var(--brand); }
+.spice-actions { display: flex; gap: 10px; margin-top: 9px; flex-wrap: wrap; }
+.spice-actions .btn { flex: 1 1 auto; }
+#spice-feedback { margin-top: 9px; }
+#spice-feedback.spice-ok {
+  background: var(--ok-bg);
+  border-color: #aedcc3;
+}
+#spice-feedback .err-title.line-title { margin-bottom: 2px; }
+.spice-line-ref { font-family: "SFMono-Regular", Consolas, monospace; font-weight: 700; }
+.hint code {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  background: #f1f4f9;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 12px;
+}

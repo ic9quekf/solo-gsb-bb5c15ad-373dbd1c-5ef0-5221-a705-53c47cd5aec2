@@ -16,13 +16,14 @@ from .sensitivity import (
     sensitivity,
 )
 from .solver import CircuitError, MAX_ELEMENTS, MAX_NODES, solve
+from .spice import SUFFIX_FACTORS, build_netlist, parse_netlist
 from .sweep import SWEEP_MAX_POINTS, SWEEP_MIN_POINTS, sweep
 from .thevenin import thevenin_equivalent
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="直流网络校核器", version="1.3.0")
+app = FastAPI(title="直流网络校核器", version="1.4.0")
 
 
 async def _read_json_object(request: Request) -> tuple[dict[str, Any] | None, JSONResponse | None]:
@@ -110,6 +111,48 @@ async def api_sensitivity(request: Request) -> JSONResponse:
     return JSONResponse(status_code=200, content=result)
 
 
+@app.post("/api/spice/import")
+async def api_spice_import(request: Request) -> JSONResponse:
+    payload, bad = await _read_json_object(request)
+    if bad is not None:
+        return bad
+
+    netlist_text = payload.get("netlist")
+    if not isinstance(netlist_text, str):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "ok": False,
+                "errors": [{
+                    "code": "bad_field",
+                    "message": "缺少字符串类型的 netlist 字段（SPICE 网表文本）",
+                    "items": [],
+                }],
+            },
+        )
+
+    try:
+        result = parse_netlist(netlist_text)
+    except CircuitError as exc:
+        # 422：网表可读取但存在行级错误 / 缺少节点 0 接地；前端不应用结果改写电路
+        return JSONResponse(status_code=422, content=exc.to_dict())
+    return JSONResponse(status_code=200, content=result)
+
+
+@app.post("/api/spice/export")
+async def api_spice_export(request: Request) -> JSONResponse:
+    payload, bad = await _read_json_object(request)
+    if bad is not None:
+        return bad
+
+    try:
+        result = build_netlist(payload)
+    except CircuitError as exc:
+        # 422：网络结构非法，或接地→0 映射与既有节点 0 冲突
+        return JSONResponse(status_code=422, content=exc.to_dict())
+    return JSONResponse(status_code=200, content=result)
+
+
 @app.get("/api/meta")
 async def api_meta() -> dict[str, Any]:
     return {
@@ -124,6 +167,10 @@ async def api_meta() -> dict[str, Any]:
             {"type": "I", "name": "独立电流源", "unit": "A"},
             {"type": "V", "name": "独立电压源", "unit": "V"},
         ],
+        "spice": {
+            "ground_node": "0",
+            "value_suffixes": {k: v for k, v in SUFFIX_FACTORS.items()},
+        },
     }
 
 

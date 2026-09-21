@@ -10,7 +10,7 @@
   <header class="topbar">
     <div class="topbar-inner">
       <h1>直流网络校核器</h1>
-      <p class="subtitle">改进节点分析（MNA）· 节点电压 / 支路电流 / 功率平衡校核 · 参数扫描 · 元件敏感度分析 · 端口戴维南等效</p>
+      <p class="subtitle">改进节点分析（MNA）· 节点电压 / 支路电流 / 功率平衡校核 · 参数扫描 · 元件敏感度分析 · 端口戴维南等效 · SPICE 网表互换</p>
     </div>
   </header>
 
@@ -77,6 +77,28 @@
           <b>R</b> 电阻（Ω）　<b>I</b> 电流源（A，正值电流由 p 流向 n）
           <b>V</b> 电压源（V，p 为正极、n 为负极）；支路方向均取 p → n。
         </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>SPICE 网表互换</h2>
+          <div class="head-right">
+            <button class="btn btn-small" id="btn-spice-sample">填入示例网表</button>
+          </div>
+        </div>
+        <textarea id="spice-text" class="input spice-text" rows="8" spellcheck="false"
+          placeholder="* 每行：名称 正端 负端 数值（节点 0 为接地）&#10;V1 1 0 10&#10;R1 1 2 10k&#10;R2 2 0 20 ; 行尾注释"></textarea>
+        <p class="hint">
+          支持空行、<code>*</code> 整行注释、<code>;</code> 行尾注释；元件行格式为
+          <code>名称 正端 负端 数值</code>（R / I / V）。数值支持科学计数法与
+          p/n/u/m/k/meg/g 后缀（<b>m = 1e-3 毫</b>，meg = 1e6）。节点由端点自动推导，
+          且必须存在节点 <b>0</b> 作为接地；导入存在任一错误时<b>不会改写</b>当前表格。
+        </p>
+        <div class="spice-actions">
+          <button class="btn" id="btn-spice-import">⇩ 导入网表到表格</button>
+          <button class="btn" id="btn-spice-export">⇧ 按当前表格生成网表</button>
+        </div>
+        <div id="spice-feedback" class="error-panel hidden"></div>
       </div>
 
       <div class="card">

@@ -1527,4 +1527,163 @@ function renderSweepTable() {
   });
 }
 
+/* ------------------------------ SPICE 网表互换 ------------------------------ */
+const SPICE_SAMPLE = [
+  "* 分压电路：10 V 电压源 + 10 kΩ / 20 kΩ（节点 0 接地）",
+  "V1 1 0 10",
+  "R1 1 2 10k",
+  "R2 2 0 20k ; 行尾注释：下管",
+  "I1 2 0 1m   ; m 按 1e-3（毫）解析",
+  "R3 2 3 3.3meg",
+  "V2 3 0 -1.5e0",
+].join("\n");
+
+function showSpiceFeedback(kind, errors, summary) {
+  const fb = $("#spice-feedback");
+  fb.innerHTML = "";
+  fb.classList.remove("hidden", "spice-ok");
+  const titleColor = kind === "ok" ? "var(--ok)" : "var(--err)";
+
+  if (summary) {
+    const head = el("div", { class: "err-title", text: `● ${summary}` });
+    head.style.color = titleColor;
+    fb.appendChild(head);
+  }
+
+  (errors || []).forEach((g) => {
+    const group = el("div", { class: "err-group" });
+    group.appendChild(el("div", { class: "err-title line-title", text: `● ${g.message}` }));
+    if (g.items && g.items.length) {
+      const ul = el("ul");
+      g.items.forEach((item) => {
+        const li = el("li");
+        if (item.line != null) {
+          li.appendChild(el("span", { class: "spice-line-ref", text: `第 ${item.line} 行：` }));
+        } else if (item.ref) {
+          li.appendChild(el("span", { class: "err-ref", text: item.ref + "：" }));
+        }
+        li.appendChild(document.createTextNode(item.detail || JSON.stringify(item)));
+        ul.appendChild(li);
+      });
+      group.appendChild(ul);
+    }
+    fb.appendChild(group);
+  });
+  if (kind === "ok") fb.classList.add("spice-ok");
+}
+
+function clearSpiceFeedback() {
+  const fb = $("#spice-feedback");
+  fb.classList.add("hidden");
+  fb.classList.remove("spice-ok");
+  fb.innerHTML = "";
+}
+
+$("#btn-spice-sample").addEventListener("click", () => {
+  $("#spice-text").value = SPICE_SAMPLE;
+  clearSpiceFeedback();
+});
+
+$("#btn-spice-import").addEventListener("click", async () => {
+  clearSpiceFeedback();
+  const text = $("#spice-text").value;
+  if (!text.trim()) {
+    showSpiceFeedback("err", [{ code: "spice_import", message: "网表文本为空", items: [] }]);
+    return;
+  }
+
+  let resp;
+  try {
+    resp = await fetch("/api/spice/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ netlist: text }),
+    });
+  } catch (err) {
+    showSpiceFeedback("err", [{ code: "network", message: `网络请求失败：${err}`, items: [] }]);
+    return;
+  }
+
+  let data;
+  try {
+    data = await resp.json();
+  } catch (err) {
+    showSpiceFeedback("err", [{ code: "server", message: "服务端返回了无法解析的内容", items: [] }]);
+    return;
+  }
+
+  if (!resp.ok || !data.ok) {
+    // 任一错误都不改写当前电路：state 原封不动
+    showSpiceFeedback("err", data.errors || [{ code: "server", message: "导入失败", items: [] }]);
+    return;
+  }
+
+  // 成功：整体替换当前电路（接地固定为推导要求的 0）
+  state = {
+    ground: data.ground,
+    nodes: data.nodes.map((id) => ({ id })),
+    elements: data.elements.map((e) => ({ ...e, value: String(e.value) })),
+  };
+  resetSweep();
+  resetThevenin();
+  resetSensitivity();
+  portSel = {
+    p: data.nodes.length > 1 ? (data.nodes.find((n) => n !== "0") || data.nodes[0]) : "",
+    n: "0",
+  };
+  nodeSig = "";
+  renderAll();
+  $("#result-area").classList.add("hidden");
+  $("#placeholder").classList.add("hidden");
+
+  const c = data.counts;
+  showSpiceFeedback(
+    "ok",
+    [],
+    `✔ 导入成功：${c.elements} 个元件、${c.nodes} 个节点（接地 0）；` +
+    `忽略 ${c.blank} 个空行、${c.comment} 行注释。当前表格已替换为导入的电路。`
+  );
+});
+
+$("#btn-spice-export").addEventListener("click", async () => {
+  clearSpiceFeedback();
+  const payload = buildPayload();
+
+  let resp;
+  try {
+    resp = await fetch("/api/spice/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    showSpiceFeedback("err", [{ code: "network", message: `网络请求失败：${err}`, items: [] }]);
+    return;
+  }
+
+  let data;
+  try {
+    data = await resp.json();
+  } catch (err) {
+    showSpiceFeedback("err", [{ code: "server", message: "服务端返回了无法解析的内容", items: [] }]);
+    return;
+  }
+
+  if (!resp.ok || !data.ok) {
+    showSpiceFeedback("err", data.errors || [{ code: "server", message: "导出失败", items: [] }]);
+    return;
+  }
+
+  $("#spice-text").value = data.netlist;
+  const notes = [];
+  if (data.ground_renamed_from) {
+    notes.push(`接地节点“${data.ground_renamed_from}”已在网表中映射为 0`);
+  }
+  if (data.omitted_isolated_nodes && data.omitted_isolated_nodes.length) {
+    notes.push(`未被任何元件引用的孤立节点已省略：${data.omitted_isolated_nodes.join("、")}`);
+  }
+  notes.push("导出文本可直接再次导入并还原等价电路");
+  showSpiceFeedback("ok", [], `✔ 导出成功：${data.element_count} 行元件。${notes.join("；")}。`);
+});
+
 renderAll();
